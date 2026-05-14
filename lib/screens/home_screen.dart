@@ -10,6 +10,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Örnek Randevular; dynamic olarak appointments tablosundan veriler çekilecek
   final List<Map<String, dynamic>> _appointments = [
     {
       "id": "1",
@@ -75,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.exit_to_app),
+            // Sağ üst köşedeki çıkış butonu kullanıcıyı çıkış yaparak giriş ekranına yönlendirir.
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -117,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _appointments.length,
               itemBuilder: (context, index) =>
                   _buildAppointmentItem(_appointments[index]),
+              // Randevu öğelerini listeleyen ListView; her randevu için _buildAppointmentItem fonksiyonunu çağırır.
             ),
           ),
         ],
@@ -128,9 +131,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.person_add_alt_1, color: Colors.white),
             )
           : null,
+      // Sadece yönetici için geçerli buton; hastanın kaydını sisteme eklemek için kullanılır.
     );
   }
 
+  // Randevunun durumuna göre renk atanır ve randevu bilgilerini gösteren kart yapısı oluşturulur.
   Widget _buildAppointmentItem(Map<String, dynamic> app) {
     Color statusColor;
     switch (app['status']) {
@@ -180,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+        // Randevu durumunu gösteren renkli etiket yapısı
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
@@ -263,6 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Randevunun detaylarını gösteren bilgiler için ortak bir widget yapısı oluşturulur.
   Widget _infoRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
