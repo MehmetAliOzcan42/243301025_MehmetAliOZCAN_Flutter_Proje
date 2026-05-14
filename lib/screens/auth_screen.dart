@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'home_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -9,30 +11,22 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
-  bool _isLogin = true; // Giriş mi kayıt mı onun bilgisi için
-  bool _isLoading = false; // İşlem sırasında butonları devre dışı bırakmak için
-  bool _obscurePassword = true; // Şifreyi gizlemek için
+  // Formları doğrulamak için
+  bool _isLoading = false;
+  // Giriş işlemi sırasında yükleniyor durumunu kontrol etmek için
+  bool _obscurePassword = true;
+  // Şifre alanının gizli olup olmadığını kontrol etmek için
 
-  // Form Kontrolleri
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _surnameController = TextEditingController();
-  final TextEditingController _tcController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-
+  // Kullanıcıdan e-posta ve şifre girişi almak için kullanılırlar.
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
-    _surnameController.dispose();
-    _tcController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
-
-  //SUPABASE İŞLEMLERİ
+  // Uygulama kapatıldığında bellek sızıntılarını önlemek için TextEditingController'ları temizler.
 
   Future<void> _handleAuth() async {
     if (!_formKey.currentState!.validate()) return;
@@ -40,22 +34,30 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     try {
-      if (_isLogin) {
-        // Supabase giriş kısmı
-        // Yönetici ve hasta girişlerini buradan yapacaklar ve giriş sonrası rol kontrolü yapılacak.
+      final AuthResponse res = await Supabase.instance.client.auth
+          .signInWithPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
 
-        _showMessage("Giriş başarılı!");
-      } else {
-        // Supabase kayıt kısmı
-        // Kayıt işlemi yapıldıktan sonra veri tabanına hastanın bilgileri eklenecek.
+      if (res.user != null) {
+        String role = res.user!.email == 'yonetici@gmail.com'
+            ? 'admin'
+            : 'patient';
 
-        _showMessage("Kayıt başarılı! Şimdi giriş yapabilirsiniz.");
-        setState(() => _isLogin = true);
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen(userRole: role)),
+        );
       }
+    } on AuthException catch (e) {
+      _showMessage("Giriş Hatası: ${e.message}", isError: true);
     } catch (e) {
-      _showMessage("Hata oluştu: ${e.toString()}", isError: true);
+      _showMessage("Beklenmedik bir hata oluştu.", isError: true);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -64,6 +66,8 @@ class _AuthScreenState extends State<AuthScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red : Colors.teal,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -71,145 +75,94 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Logo ve Başlık
               const Icon(
                 Icons.medical_services_outlined,
-                size: 80,
+                size: 100,
                 color: Colors.teal,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               const Text(
                 "DİŞ KLİNİĞİ",
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 30,
                   fontWeight: FontWeight.bold,
                   color: Colors.teal,
+                  letterSpacing: 1.5,
                 ),
               ),
               const Text(
                 "Randevu Takip Sistemi",
-                style: TextStyle(color: Colors.grey, letterSpacing: 1.2),
-              ),
-              const SizedBox(height: 40),
-
-              // Form Kartı
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w400,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        Text(
-                          _isLogin ? "Giriş Yap" : "Hasta Kayıt",
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
+              ),
+              const SizedBox(height: 50),
 
-                        // Eposta
-                        _buildTextField(
-                          controller: _emailController,
-                          label: "E-posta Adresi",
-                          icon: Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Şifre
-                        _buildTextField(
-                          controller: _passwordController,
-                          label: "Şifre",
-                          icon: Icons.lock_outline,
-                          isPassword: true,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // KAYIT
-                        if (!_isLogin) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _nameController,
-                                  label: "Ad",
-                                  icon: Icons.person_outline,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _surnameController,
-                                  label: "Soyad",
-                                  icon: Icons.person_outline,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _buildTextField(
-                            controller: _tcController,
-                            label: "TC Kimlik No",
-                            icon: Icons.badge_outlined,
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildTextField(
-                            controller: _phoneController,
-                            label: "Telefon Numarası",
-                            icon: Icons.phone_outlined,
-                            keyboardType: TextInputType.phone,
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // Kayıt/Giriş Butonu
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _handleAuth,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: _isLoading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 3,
-                                  )
-                                : Text(_isLogin ? "GİRİŞ YAP" : "KAYIT OL"),
-                          ),
-                        ),
-
-                        // Kayıt/Giriş Arası Geçiş
-                        TextButton(
-                          onPressed: () => setState(() => _isLogin = !_isLogin),
-                          child: Text(
-                            _isLogin ? "Kayıt oluştur" : "Giriş yapın",
-                            style: const TextStyle(color: Colors.teal),
-                          ),
-                        ),
-                      ],
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    const Text(
+                      "Kullanıcı Girişi",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 25),
+                    // Her form alanı için kod tekrarı yapmamak adına _buildInput fonksiyonu kullanılır.
+                    _buildInput(
+                      "E-posta",
+                      _emailController,
+                      Icons.email_outlined,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildInput(
+                      "Şifre",
+                      _passwordController,
+                      Icons.lock_outline,
+                      isPassword: true,
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _handleAuth,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                "GİRİŞ YAP",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -219,21 +172,21 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // Şifre gizleme ve ortak kısımlar için TextField
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
+  Widget _buildInput(
+    String label,
+    TextEditingController controller,
+    IconData icon, {
     bool isPassword = false,
-    TextInputType keyboardType = TextInputType.text,
   }) {
+    // Giriş kısmı ve şifre kısmı için ortak bir widget oluşturur, böylece kod tekrarı önlenir.
     return TextFormField(
       controller: controller,
       obscureText: isPassword ? _obscurePassword : false,
-      keyboardType: keyboardType,
+      style: const TextStyle(fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: Colors.teal),
+        labelStyle: const TextStyle(color: Colors.grey),
+        prefixIcon: Icon(icon, color: Colors.teal, size: 22),
         suffixIcon: isPassword
             ? IconButton(
                 icon: Icon(
@@ -244,25 +197,17 @@ class _AuthScreenState extends State<AuthScreen> {
                     setState(() => _obscurePassword = !_obscurePassword),
               )
             : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(15),
           borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.teal, width: 2),
         ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: Colors.grey[50],
+        contentPadding: const EdgeInsets.symmetric(vertical: 18),
       ),
-      validator: (value) {
-        if (value == null || value.isEmpty) return "Bu alan boş bırakılamaz";
-        return null;
-      },
+      validator: (v) =>
+          (v == null || v.isEmpty) ? "$label alanı gereklidir" : null,
     );
   }
 }
