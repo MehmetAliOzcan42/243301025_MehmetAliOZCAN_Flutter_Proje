@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'form_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userRole;
@@ -126,7 +127,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: widget.userRole == 'admin'
           ? FloatingActionButton(
-              onPressed: () {},
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const FormScreen()),
+                );
+              },
               backgroundColor: Colors.teal,
               child: const Icon(Icons.person_add_alt_1, color: Colors.white),
             )
