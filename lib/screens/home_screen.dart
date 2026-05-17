@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import 'form_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -11,54 +13,214 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Örnek Randevular; dynamic olarak appointments tablosundan veriler çekilecek
-  final List<Map<String, dynamic>> _appointments = [
-    {
-      "id": "1",
-      "patient": "Can Berk",
-      "hekim": "Dt. Arda Guler",
-      "date": "18.05.2024",
-      "time": "11:00",
-      "status": "Onaylandı",
-      "treatment": "İmplant Muayenesi",
-    },
-    {
-      "id": "2",
-      "patient": "Zeynep Sönmez",
-      "hekim": "Dt. Merve Aydın",
-      "date": "20.05.2024",
-      "time": "15:45",
-      "status": "Beklemede",
-      "treatment": "Diş Taşı Temizliği",
-    },
-    {
-      "id": "3",
-      "patient": "Ahmet Yılmaz",
-      "hekim": "Dt. Arda Guler",
-      "date": "21.05.2024",
-      "time": "10:30",
-      "status": "Tamamlandı",
-      "treatment": "Kanal Tedavisi",
-    },
-    {
-      "id": "4",
-      "patient": "Ayşe Demir",
-      "hekim": "Dt. Merve Aydın",
-      "date": "22.05.2024",
-      "time": "09:00",
-      "status": "İptal Edildi",
-      "treatment": "Dolgu",
-    },
-    {
-      "id": "5",
-      "patient": "Mehmet Öz",
-      "hekim": "Dt. Arda Guler",
-      "date": "23.05.2024",
-      "time": "14:00",
-      "status": "Ertelendi",
-      "treatment": "Diş Beyazlatma",
-    },
-  ];
+  // Veritabanından çekilecek dinamik randevu listesi
+  List<Map<String, dynamic>> _appointments = [];
+  bool _isLoading = true; // Yükleniyor animasyonu kontrolü
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAppointments(); // Sayfa açılır açılmaz verileri veritabanından çeker.
+  }
+
+  // Supabase'den randevuları çeken fonksiyon
+  Future<void> _fetchAppointments() async {
+    setState(() => _isLoading = true);
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Randevu tablosunu Hasta, Hekim ve RandevuDetay tablolarıyla joinleyerek gerekli tüm bilgileri tek sorguda çekiyoruz.
+      var query = supabase.from('Randevu').select('''
+        RandevuID,
+        Tarih,
+        Saat,
+        Durum,
+        Hasta!inner (HastaID, Ad, Soyad, TCNO, Telefon, Eposta),
+        Hekim (HekimID, Ad, Soyad),
+        RandevuDetay (
+          Tedavi (TedaviID, Ad, Ucret)
+        )
+      ''');
+
+      // Eğer giriş yapan kişi hasta ise sadece kendi e-postasına ait randevuları görsün
+      if (widget.userRole == 'patient') {
+        final currentUserEmail = supabase.auth.currentUser?.email;
+        if (currentUserEmail != null) {
+          query = query.eq('Hasta.Eposta', currentUserEmail);
+        }
+      }
+
+      final List<dynamic> response = await query;
+
+      // Supabase'den çekilen verileri uygulama içinde kullanacağımız formatta dönüştürüyoruz
+      final List<Map<String, dynamic>> yuklenenRandevular = response.map((row) {
+        DateTime parsedDate = DateTime.parse(row['Tarih']);
+        String formatliTarih = DateFormat('dd.MM.yyyy').format(parsedDate);
+
+        // Randevuya ait tedaviyi alıyoruz.
+        List detaylar = row['RandevuDetay'] as List;
+        String tedaviAdi = "Genel Kontrol"; // Default tedavi
+        if (detaylar.isNotEmpty && detaylar[0]['Tedavi'] != null) {
+          tedaviAdi = detaylar[0]['Tedavi']['Ad'].toString();
+        }
+
+        return {
+          "id": row['RandevuID'].toString(),
+          "patient": "${row['Hasta']['Ad']} ${row['Hasta']['Soyad']}",
+          "hekim": "Dt. ${row['Hekim']['Ad']} ${row['Hekim']['Soyad']}",
+          "date": formatliTarih,
+          "time": row['Saat'].toString(),
+          "status": row['Durum'].toString(),
+          "treatment": tedaviAdi,
+          "tc": row['Hasta']['TCNO'].toString(),
+          "telefon": row['Hasta']['Telefon'].toString(),
+        };
+      }).toList();
+
+      setState(() {
+        _appointments = yuklenenRandevular;
+        _isLoading = false;
+      });
+    } catch (e) {
+      _showMessage("Randevular yüklenirken hata oluştu: $e", isError: true);
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Randevu durumunu güncelleyen ve yapılan işlemi Log tablosuna kaydeden fonksiyon
+  Future<void> _updateAppointmentStatus(
+    String randevuId,
+    String yeniDurum,
+    String hastaAdi,
+  ) async {
+    setState(() => _isLoading = true);
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Durum güncelleme
+      await supabase
+          .from('Randevu')
+          .update({'Durum': yeniDurum})
+          .eq('RandevuID', int.parse(randevuId));
+
+      // Log kaydı ekleme
+      final aktifKullanici = supabase.auth.currentUser?.email ?? "Yönetici";
+      await supabase.from('Log').insert({
+        'IslemYapan': aktifKullanici,
+        'IslemTipi': 'Durum Güncelleme',
+        'Aciklama':
+            '$hastaAdi isimli hastanın randevu durumu "$yeniDurum" olarak güncellendi.',
+      });
+
+      _showMessage("Randevu durumu başarıyla güncellendi.");
+      _fetchAppointments(); // Listeyi yenile
+    } catch (e) {
+      _showMessage("Güncelleme sırasında hata oluştu: $e", isError: true);
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Randevu durumunu güncellemek için açılan dialog
+  void _showStatusUpdateDialog(
+    String randevuId,
+    String mevcutDurum,
+    String hastaAdi,
+  ) {
+    final List<String> durumlar = [
+      'Beklemede',
+      'Onaylandı',
+      'Tamamlandı',
+      'İptal Edildi',
+      'Ertelendi',
+    ];
+    String selectedDurum = mevcutDurum;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              title: const Text(
+                "Durum Güncelle",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal,
+                ),
+              ),
+              content: DropdownButtonFormField<String>(
+                value: durumlar.contains(selectedDurum)
+                    ? selectedDurum
+                    : durumlar[0],
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                ),
+                items: durumlar.map((String durum) {
+                  return DropdownMenuItem<String>(
+                    value: durum,
+                    child: Text(durum),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setDialogState(() => selectedDurum = val);
+                  }
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    "Vazgeç",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Diyaloğu kapat
+                    Navigator.pop(context); // BottomSheet'i de kapat
+                    _updateAppointmentStatus(
+                      randevuId,
+                      selectedDurum,
+                      hastaAdi,
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    "Kaydet",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.teal,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +239,6 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.exit_to_app),
-            // Sağ üst köşedeki çıkış butonu kullanıcıyı çıkış yaparak giriş ekranına yönlendirir.
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -110,38 +271,53 @@ class _HomeScreenState extends State<HomeScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.teal),
+                  onPressed:
+                      _fetchAppointments, // Listeyi manuel yenileme imkanı
+                ),
               ],
             ),
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _appointments.length,
-              itemBuilder: (context, index) =>
-                  _buildAppointmentItem(_appointments[index]),
-              // Randevu öğelerini listeleyen ListView; her randevu için _buildAppointmentItem fonksiyonunu çağırır.
-            ),
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.teal),
+                  )
+                : _appointments.isEmpty
+                ? Center(
+                    child: Text(
+                      "Kayıtlı randevu bulunamadı.",
+                      style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _appointments.length,
+                    itemBuilder: (context, index) =>
+                        _buildAppointmentItem(_appointments[index]),
+                  ),
           ),
         ],
       ),
       floatingActionButton: widget.userRole == 'admin'
           ? FloatingActionButton(
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                // FormScreen'den geri dönüldüğünde listenin otomatik yenilenmesi için bekliyoruz
+                await Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const FormScreen()),
                 );
+                _fetchAppointments();
               },
               backgroundColor: Colors.teal,
               child: const Icon(Icons.person_add_alt_1, color: Colors.white),
             )
           : null,
-      // Sadece yönetici için geçerli buton; hastanın kaydını sisteme eklemek için kullanılır.
     );
   }
 
-  // Randevunun durumuna göre renk atanır ve randevu bilgilerini gösteren kart yapısı oluşturulur.
   Widget _buildAppointmentItem(Map<String, dynamic> app) {
     Color statusColor;
     switch (app['status']) {
@@ -191,7 +367,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        // Randevu durumunu gösteren renkli etiket yapısı
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
@@ -246,6 +421,8 @@ class _HomeScreenState extends State<HomeScreen> {
             const Divider(),
             const SizedBox(height: 15),
             _infoRow(Icons.person, "Hasta", app['patient']),
+            _infoRow(Icons.badge_outlined, "TC Kimlik", app['tc'] ?? "-"),
+            _infoRow(Icons.phone_outlined, "Telefon", app['telefon'] ?? "-"),
             _infoRow(Icons.medical_information, "Hekim", app['hekim']),
             _infoRow(Icons.settings, "Tedavi", app['treatment']),
             _infoRow(
@@ -260,13 +437,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    _showStatusUpdateDialog(
+                      app['id'],
+                      app['status'],
+                      app['patient'],
+                    );
+                  },
                   icon: const Icon(Icons.edit, color: Colors.white),
                   label: const Text(
                     "Durumu Güncelle",
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -275,7 +466,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Randevunun detaylarını gösteren bilgiler için ortak bir widget yapısı oluşturulur.
   Widget _infoRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
