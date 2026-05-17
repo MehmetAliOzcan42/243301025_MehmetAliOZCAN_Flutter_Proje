@@ -15,7 +15,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   // Veritabanından çekilecek dinamik randevu listesi
   List<Map<String, dynamic>> _appointments = [];
-  bool _isLoading = true; // Yükleniyor animasyonu kontrolü
+  bool _isLoading = true; // Yükleniyor animasyonu kontrolü için
 
   @override
   void initState() {

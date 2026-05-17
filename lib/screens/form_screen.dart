@@ -152,7 +152,7 @@ class _FormScreenState extends State<FormScreen> {
       } else {
         final String epostaAdresi = _emailController.text.trim();
         // Supabase Auth sistemine kullanıcıyı kaydediyoruz
-        // Şifre olarak standart '123456' belirliyoruz. Hasta bu şifreyle giriş yapabilecek.
+        // Standart şifre 123456
         await supabase.auth.signUp(email: epostaAdresi, password: '123456');
         // Hasta yoksa yeni bir hasta kaydı oluşturuyoruz
         final yeniHasta = await supabase
@@ -170,11 +170,11 @@ class _FormScreenState extends State<FormScreen> {
         hastaId = yeniHasta['HastaID'] as int;
       }
 
-      // Tarih formatını "yyyy-MM-dd" şekline getiriyoruz (Örn: "2024-06-15")
+      // Tarih formatını "yyyy-MM-dd" şekline getiriyoruz
       final String formatliTarih = DateFormat(
         'yyyy-MM-dd',
       ).format(_selectedDate!);
-      // Saat formatını "HH:mm" şekline getiriyoruz (Örn: "14:30")
+      // Saat formatını "HH:mm" şekline getiriyoruz
       final String formatliSaat =
           "${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}";
 
